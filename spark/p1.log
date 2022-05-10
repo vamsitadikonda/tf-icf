@@ -1,0 +1,12 @@
+srun -N4 -popteron --pty /bin/bash
+cd HW5/p1
+tar xvf TFICF.tar
+source spark-hadoop-setup.sh &> setup_output.txt
+hdfs dfs -put input /user/btadiko/input
+            
+
+javac TFICF.java
+jar cf TFICF.jar TFICF*.class
+spark-submit --class TFICF TFICF.jar input &> spark_output.txt
+grep -v '^2022\|^(\|^-' spark_output.txt > output.txt
+diff -s solution.txt output.txt

@@ -1,0 +1,84 @@
+Single Author info:
+
+btadiko Bapiraju Vamsi Tadikonda
+
+
+## How to Run the Job ##
+* Prerequisites - Have hadoop setup on the server and has java installed.
+* Compile the java file TFICF.java and save the classes as a jar file.
+javac TFICF.java
+jar cf TFICF.jar TFICF*.class
+
+* Run the jar file using "hadoop jar" command. you can store the result in a text file using >.
+hadoop jar TFICF.jar TFICF input0 input1 &> hadoop_output.txt
+
+* Copy the output files and their statuses to the remote host from hadoop using "hadoop dfs -get"
+hdfs dfs -get /user/btadiko/output* .
+
+
+## Overview of the Code ##
+    The java code follows the basic principles of Map Reduce and is streamlined into a pipeline that can be split into four overall components.
+    i.e, Initialization, WordCount, DocSize, TFICF.
+
+    In each component, we set a new map-reduce job with Input as the output from the previous component. 
+    Since, each component is dependent on the output documents of the prior job, the input to every mapper in the java program comes from  (Object, Text). 
+    
+    #1 Initialization: 
+    In the Initialization component, The program configures the jobs for the other three component by declaring the following information (The sample code shows the WordCount components declaration)
+    i)  Creating a job Instance with an appropriate name
+        Job wcJob = Job.getInstance(conf, "WordCount");
+    ii) Setting the correct class and Jar file to be used for by the Mapper and Reducer.
+        wcJob.setJarByClass(TFICF.class);
+    iii) Seting mapper and reducer
+        wcJob.setMapperClass(WCMapper.class);
+        wcJob.setReducerClass(WCReducer.class);
+    iv) Setting output key and value class type
+        wcJob.setOutputKeyClass(Text.class);
+        wcJob.setOutputValueClass(IntWritable.class);
+    v)  Setting input and output paths
+        FileInputFormat.addInputPath(wcJob, wcInputPath);
+        FileOutputFormat.setOutputPath(wcJob, wcOutputPath);
+    vi) Executing the job and waiting for its completion
+        wcJob.waitForCompletion(true);
+        
+    The other three components have a mapper and reducer which are confgured as follows.
+    #2 WordCount 
+
+        #2.1 Word Count Mapper (WCMapper)
+        The Mapper creates list of keys which have each word tagged with the document name as the key and a count of 1 as the value.
+        Logic :
+            - The program fetches the document name from the context path as it is not provided directly.
+            - The document is sent to a string tokenizer and each token is parsed one at a time. 
+            -  Each token is parsed with a custom pre-processing logic which is set to match the sample output files. the logic is as follows:
+                - Each token is converted to lowercase and a list of special characters are removed from the token.
+                - If the remaining token starts with a square brackets, the token is ignored.
+                - If the token is a number, or starts with a number or has a special character as the first character, The token is exempted.
+            - A count of 1 is hardcoded to each token.
+
+        #2.2 Word Reducer  (WCReducer)
+        Logic :
+            - The program simply count the total number of times a key is present and update the reducer to include the word count 
+
+    #3 Document Size
+        
+       #3.1 Document Size Mapper (DSMapper)
+            The mapper is just Rearraging the input key and values to have key containing only the document (word and document in input) 
+            and word along with its count in the value (previously just wordcount).
+        
+       #3.1 Document Size Reducer (DSReducer)
+            In the Reducer, The word and document names are taken from the input and calculate the total word count of a document is calculated using a simple iterative loop.
+            We want to iterate through the input data twice since the document size is required for every (key,value) pair published to the MapReduce context.
+            But since we can only traverse over the context once, A cache is maintained which stores all the values.
+            In the second iteration, the total word count is appended to each word in a document.
+
+    #4 TFICF
+        
+        #4.1 TFICF Mapper (TFICFMapper)    
+            The program just rearranges the key and values by moving the document name from the key to each format. 
+        
+        #4.2 TFICF Reducer (TFICFReducer)
+            The final Reducer extracts the word, document name, the word count and the total word count to apply them in a formula provded in the paper to calculate the TFICF. 
+            But, the formula also requires the total number of documents containing the same word,
+            So inorder to calculate the number of documents containing a word, we need to iterate over the keys once and then we also need another iteration to then calculate the TFICF.
+            Inorder to iterate over the values twice, The program uses a cache which adds the complete value string in the cache while calculating the number of documents containing a word.
+            Initially, the key, value pairs are put in a hashmap which later on writes them to the mapreduce context during the cleanup of the reducer.

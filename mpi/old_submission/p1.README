@@ -1,0 +1,53 @@
+Single Author Info:
+btadiko Bapiraju Vamsi Tadikonda
+
+
+##1 Describe your implementation step-by-step. This should include descriptions of what MPI messages get sent/received by which rank, and in what order?
+
+The approach contains three main parts. 
+
+    # Phase 0 - Pre-computation:
+        1) The program first declares all the required arrays and saves the information 
+        2) Precompute the total number of documents in the variable numDocs.
+        3) The program defines two MPI Custom Datatypes one for the type u_w (as mpi_u_w) and another for word_document_str (as mpi_string). The mpi_u_w datatype is used to transfer the unique words in each worker to the root in phase 1. The mpi_string dataype is used to transfer the final output strings to the root from each worker in the last phase.
+
+    #Phase 1 - Computation of TF Scores in the Worker tasks
+        In this phase, each worker computes the number unique words present in its allocated set of documents. It also computes the metrics required for TF values in the same phase. The detailed process is mentioned below.
+        1) All the worker task apart from the root, run the same serial Logic provided for computation of TF Score is used for finding out TF-Scores i.e fill up TFICF array.
+        2) Along with TFICF array, the numDocsWithWord information for unique words is extracted in each worker's local context and is also updated in its unique_words array.
+        3) After Computing the array of unique_words in the worker's local context. They are sent to the root task to deduce the correct number of unique words and numDocsWithWord through out all the files.
+
+        Meanwhile, the root task follows the following process.
+        1) It receives the total number of unique words from present with each worker task along with the words.
+        2) The recived unique words are stored in a temporary array (temp_u_w) and all the words not present already in the unique_words array are added.
+        3) After finding the final list of unique words, the root broadcasts the final unique word count and list of unique_words using MPI_Bcast.
+
+    # Phase 2 - Global Computation of ICF Stats for all the words
+        In this phase, each worker performs the following.
+        1) After getting the final version of unique_words array from the root, the worker populates all the TFICF objects with numDocsWithWord.
+        2) Later on the program calculates TFICF value and puts: "document@word\tTFICF" into strings array.
+        3) After computing the TFICF values as strings, the arrays are sent to the root thorugh MPI_Send. 
+
+        Meanwhile, the root task follows the following process.
+        1) It receives the final TFICF output string count and the array of output strings from the worker task.
+        2) The recived output strings are stored in a temporary array (temp_strings) and then they are added to the strings array in the root.
+        3) After fetching the final TFICF output strings, the root sorts the output strings and saves them in output.txt file to the disk.
+
+##2 Describe how you could add more parallelism to your code so that all of the processors on each MPI node are used instead of only one processor per MPI node
+    In scenarios when a compute node is responsible for many files, we can add OpenMP pragmas to process one file per thread. It is imperative that the data structures used to keep track of word counts are thread-safe and some kind of synchronization be present. Phases 1 and 2 are handled more efficiently in this way. This is especially evident when a large number of documents must be handled by every worker.
+
+##3 Compare your MPI implementation to the previous MapReduce and Spark implementations of TFICF
+
+    The Basic logic blocks to implement the TFICF values remains almost the same in all the three implmentations. The Spark and Map-Reduce implementations produce Key-value pairs while the MPI implementation does not. Other key differences are seen in the following aspects.
+
+    # Flexibility 
+    In the MPI version, the developer has the maximum flexibility to communicate between the compute nodes and is responsible for designing and optimizing the program. In Spark and MapReduce implementations, the developer has less control over how the messages are communicated compared to the MPI version. 
+
+    # Coding
+    In the MPI implementation having flexibility also makes it challenging to code. In the MapReduce implementation had classes for each step of the task, while the Spark implementation had RDDs for each phase. This improves the readability and maintainability of the MapReduce and Spark implementations in a industry environment compared to MPI implementation.
+
+    # Communication Style 
+    The MPI implementation prefers more direct communication between nodes to transfer information. MapReduce saves all the intermediate results to the HDFS file system which reduces communication between nodes. Spark uses RDDs which are a distributed memory structures, but it is restricted by the amount of transformations and operations it can do.
+
+    # Scalablilty
+    Though a direct comparision of the implementations was not performed, MPI might seem to be faster but the overhead of communications could lead to diminishing returns when the input scale is increased. The Spark and MapReduce options might be slower for smaller datasets but generally scale well as the input datasize increases.
